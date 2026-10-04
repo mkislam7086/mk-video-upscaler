@@ -1,134 +1,23 @@
-const videoInput=document.querySelector("#videoInput"),videoInfo=document.querySelector("#videoInfo"),statusEl=document.querySelector("#status"),testBtn=document.querySelector("#testBtn"),preview=document.querySelector("#preview"),before=document.querySelector("#before"),after=document.querySelector("#after"),resultText=document.querySelector("#resultText"),progressWrap=document.querySelector("#progressWrap"),progressBar=document.querySelector("#progressBar"),progressText=document.querySelector("#progressText");
-let file=null,session=null,gpuReady=false;
-
-// WebGPU-safe fixed-shape Real-ESRGAN model.
-// Input: 1x3x384x384 -> output: 1x3x1536x1536.
+const $=s=>document.querySelector(s);
+const input=$("#videoInput"),drop=$("#dropZone"),fileMeta=$("#fileMeta"),processBtn=$("#processBtn"),statusEl=$("#status"),badge=$("#engineBadge"),progressWrap=$("#progressWrap"),progressBar=$("#progressBar"),percent=$("#percent"),preview=$("#preview"),beforeVideo=$("#beforeVideo"),afterVideo=$("#afterVideo"),downloadBtn=$("#downloadBtn"),resultText=$("#resultText"),previewSub=$("#previewSub");
 const MODEL_URL="https://huggingface.co/Saimon8420/realesr-general-x4v3-web/resolve/main/realesr-general-x4v3-static384.onnx";
-const MODEL_SIZE=384, SCALE=4;
+const MODEL_SIZE=384,SCALE=4,MAX_SECONDS=30,MAX_LONG_EDGE=2160;
+let file=null,session=null,mediaReady=false,busy=false;
+const setProgress=v=>{v=Math.max(0,Math.min(100,Math.round(v)));progressBar.style.width=v+"%";percent.textContent=v+"%"};
+const status=t=>statusEl.textContent=t;
+const err=e=>{console.error(e);status("Error: "+(e?.message||e));processBtn.disabled=!file||busy};
+function selectedMode(){return document.querySelector('input[name="mode"]:checked').value}
+function formatBytes(n){if(n<1024*1024)return (n/1024).toFixed(0)+" KB";return (n/1024/1024).toFixed(1)+" MB"}
+function activateModeUI(){document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x.querySelector('input').checked))}
+document.querySelectorAll('input[name="mode"]').forEach(x=>x.addEventListener('change',activateModeUI));
 
-const setProgress=v=>{v=Math.max(0,Math.min(100,Math.round(v)));progressBar.style.width=v+"%";progressText.textContent=v+"%"};
-const status=(s,e=false)=>statusEl.textContent=(e?"❌ ":"")+s;
-function showError(e){console.error(e);const m=e?.message||String(e);status(m.slice(0,500),true);resultText.textContent="Technical error: "+m.slice(0,700);preview.classList.remove("hidden");testBtn.disabled=false}
-
-async function initGPU(){
-  if(!("gpu" in navigator)){status("WebGPU is not available in this browser.",true);return false}
-  try{
-    const a=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});
-    if(!a){status("No compatible GPU adapter found.",true);return false}
-    gpuReady=true;status("WebGPU available. Loading fixed-size AI model…");return true
-  }catch(e){showError(e);return false}
-}
-
-async function loadModel(){
-  if(!gpuReady)throw Error("WebGPU is not ready.");
-  status("Loading WebGPU-safe AI model…");setProgress(5);
-  session=await ort.InferenceSession.create(MODEL_URL,{
-    executionProviders:["webgpu"],
-    graphOptimizationLevel:"all"
-  });
-  console.log("inputs",session.inputNames,"outputs",session.outputNames);
-  if(!session.inputNames.length||!session.outputNames.length)throw Error("AI model loaded but no input/output nodes were found.");
-  setProgress(20);status("AI model loaded. Ready for frame test.");
-}
-
-function meta(f){
-  return new Promise((res,rej)=>{
-    const v=document.createElement("video");v.preload="metadata";v.muted=true;v.playsInline=true;
-    const cleanup=()=>{v.onloadedmetadata=null;v.onerror=null};
-    v.onloadedmetadata=()=>{const x={duration:v.duration,width:v.videoWidth,height:v.videoHeight};cleanup();URL.revokeObjectURL(v.src);res(x)};
-    v.onerror=()=>{cleanup();URL.revokeObjectURL(v.src);rej(Error("Could not read video metadata. Try an MP4/H.264 video."))};
-    v.src=URL.createObjectURL(f)
-  })
-}
-
-function loadVideo(f){
-  return new Promise((res,rej)=>{
-    const v=document.createElement("video");v.preload="auto";v.muted=true;v.playsInline=true;
-    let settled=false;
-    const fail=()=>{if(!settled){settled=true;URL.revokeObjectURL(v.src);rej(Error("Video decode failed. Try an MP4/H.264 video."))}};
-    v.onerror=fail;
-    v.onloadeddata=()=>{if(!settled){settled=true;res(v)}};
-    v.src=URL.createObjectURL(f);
-    v.load();
-  })
-}
-
-function seek(v,t){
-  return new Promise((res,rej)=>{
-    let timer;
-    const done=()=>{clearTimeout(timer);v.removeEventListener("seeked",done);res()};
-    v.addEventListener("seeked",done,{once:true});
-    v.currentTime=t;
-    timer=setTimeout(()=>{v.removeEventListener("seeked",done);rej(Error("Video seek timed out."))},15000)
-  })
-}
-
-// Put the source frame into a 384x384 letterboxed RGB canvas.
-// This preserves the original aspect ratio; no stretching.
-function makePaddedCanvas(v){
-  const srcW=v.videoWidth,srcH=v.videoHeight;
-  if(!srcW||!srcH)throw Error("Video frame has no valid dimensions.");
-  const c=document.createElement("canvas");c.width=MODEL_SIZE;c.height=MODEL_SIZE;
-  const ctx=c.getContext("2d");
-  ctx.fillStyle="#000";ctx.fillRect(0,0,MODEL_SIZE,MODEL_SIZE);
-  const s=Math.min(MODEL_SIZE/srcW,MODEL_SIZE/srcH);
-  const w=Math.max(1,Math.round(srcW*s)),h=Math.max(1,Math.round(srcH*s));
-  const x=Math.floor((MODEL_SIZE-w)/2),y=Math.floor((MODEL_SIZE-h)/2);
-  ctx.drawImage(v,x,y,w,h);
-  return {canvas:c,scaledW:w,scaledH:h,x,y,scale:s,srcW,srcH}
-}
-
-function tensorFromCanvas(canvas){
-  const ctx=canvas.getContext("2d",{willReadFrequently:true}),d=ctx.getImageData(0,0,MODEL_SIZE,MODEL_SIZE).data,p=MODEL_SIZE*MODEL_SIZE,a=new Float32Array(3*p);
-  for(let x=0,i=0;x<p;x++,i+=4){a[x]=d[i]/255;a[p+x]=d[i+1]/255;a[2*p+x]=d[i+2]/255}
-  return new ort.Tensor("float32",a,[1,3,MODEL_SIZE,MODEL_SIZE])
-}
-
-function outputToCanvas(t,box){
-  if(!t?.dims||t.dims.length!==4)throw Error("AI returned an invalid output tensor.");
-  const [n,ch,h,w]=t.dims;
-  if(n!==1||ch<3||h!==MODEL_SIZE*SCALE||w!==MODEL_SIZE*SCALE)throw Error("Unexpected AI output shape: "+t.dims.join(" × "));
-  const d=t.data,p=h*w,o=new Uint8ClampedArray(p*4);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;o[i*4]=Math.max(0,Math.min(255,Math.round(d[i]*255)));o[i*4+1]=Math.max(0,Math.min(255,Math.round(d[p+i]*255)));o[i*4+2]=Math.max(0,Math.min(255,Math.round(d[2*p+i]*255)));o[i*4+3]=255}
-  const full=document.createElement("canvas");full.width=w;full.height=h;full.getContext("2d").putImageData(new ImageData(o,w,h),0,0);
-  // Crop model padding, then resize to the original frame dimensions.
-  const cropX=Math.round(box.x*SCALE),cropY=Math.round(box.y*SCALE),cropW=Math.round(box.scaledW*SCALE),cropH=Math.round(box.scaledH*SCALE);
-  after.width=box.srcW*4;after.height=box.srcH*4;
-  after.getContext("2d").drawImage(full,cropX,cropY,cropW,cropH,0,0,after.width,after.height);
-}
-
-async function test(){
-  if(!file)throw Error("Please select a video first.");
-  if(!session)throw Error("AI model is not ready yet.");
-  testBtn.disabled=true;progressWrap.classList.remove("hidden");preview.classList.remove("hidden");setProgress(25);status("Opening selected video…");
-  let v=null;
-  try{
-    v=await loadVideo(file);
-    await seek(v,Math.min(.5,Math.max(0,v.duration/2)));
-    const box=makePaddedCanvas(v);
-    before.width=box.srcW;before.height=box.srcH;
-    before.getContext("2d").drawImage(v,0,0,box.srcW,box.srcH);
-    setProgress(40);status(`Running WebGPU AI on fixed ${MODEL_SIZE}×${MODEL_SIZE} input…`);
-    const r=await session.run({[session.inputNames[0]]:tensorFromCanvas(box.canvas)});
-    const out=r[session.outputNames[0]];
-    if(!out)throw Error("AI completed but output was not returned.");
-    setProgress(85);outputToCanvas(out,box);setProgress(100);
-    resultText.textContent=`SUCCESS: ${box.srcW}×${box.srcH} → ${after.width}×${after.height}. Aspect ratio preserved; processed locally.`;
-    status("AI frame test complete. No video was uploaded.")
-  }finally{
-    if(v?.src)URL.revokeObjectURL(v.src);
-    testBtn.disabled=false
-  }
-}
-
-videoInput.addEventListener("change",async()=>{
-  file=videoInput.files?.[0]||null;testBtn.disabled=true;preview.classList.add("hidden");progressWrap.classList.add("hidden");setProgress(0);if(!file)return;
-  try{
-    const m=await meta(file),limit=10;
-    videoInfo.classList.remove("hidden");videoInfo.textContent=`${file.name} • ${m.width}×${m.height} • ${m.duration.toFixed(1)} sec`;
-    if(m.duration>limit){status(`Prototype limit is ${limit} seconds. Final V1 target will be 30 seconds.`,true);return}
-    if(await initGPU()){await loadModel();testBtn.disabled=false}
-  }catch(e){showError(e)}
-});
-testBtn.addEventListener("click",()=>test().catch(showError));
-initGPU().catch(showError);
+drop.onclick=()=>input.click();drop.ondragover=e=>{e.preventDefault()};drop.ondrop=e=>{e.preventDefault();if(e.dataTransfer.files[0]){input.files=e.dataTransfer.files;input.dispatchEvent(new Event('change'))}};
+async function init(){try{if(!navigator.gpu)throw Error("WebGPU is not available. Please use recent Chrome/Edge on Android or desktop.");const adapter=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});if(!adapter)throw Error("No compatible GPU found.");badge.textContent="GPU READY";status("Loading AI model…");session=await ort.InferenceSession.create(MODEL_URL,{executionProviders:["webgpu"],graphOptimizationLevel:"all"});badge.textContent="AI READY";status("AI engine ready. Choose a video.");processBtn.disabled=!file}catch(e){badge.textContent="GPU ERROR";err(e)}}
+function tensorFromCanvas(canvas){const ctx=canvas.getContext('2d',{willReadFrequently:true}),d=ctx.getImageData(0,0,MODEL_SIZE,MODEL_SIZE).data,p=MODEL_SIZE*MODEL_SIZE,a=new Float32Array(3*p);for(let i=0,j=0;i<p;i++,j+=4){a[i]=d[j]/255;a[p+i]=d[j+1]/255;a[2*p+i]=d[j+2]/255}return new ort.Tensor('float32',a,[1,3,MODEL_SIZE,MODEL_SIZE])}
+async function aiFrame(sourceCanvas,outputCanvas,tw,th){const c=document.createElement('canvas');c.width=MODEL_SIZE;c.height=MODEL_SIZE;const cx=c.getContext('2d');cx.fillStyle='#000';cx.fillRect(0,0,MODEL_SIZE,MODEL_SIZE);const s=Math.min(MODEL_SIZE/tw,MODEL_SIZE/th),w=Math.max(1,Math.round(tw*s)),h=Math.max(1,Math.round(th*s));cx.drawImage(sourceCanvas,0,0,tw,th,(MODEL_SIZE-w)/2,(MODEL_SIZE-h)/2,w,h);const r=await session.run({[session.inputNames[0]]:tensorFromCanvas(c)});const t=r[session.outputNames[0]],H=t.dims[2],W=t.dims[3],data=t.data,p=H*W,rgba=new Uint8ClampedArray(p*4);for(let i=0;i<p;i++){rgba[i*4]=Math.max(0,Math.min(255,Math.round(data[i]*255)));rgba[i*4+1]=Math.max(0,Math.min(255,Math.round(data[p+i]*255)));rgba[i*4+2]=Math.max(0,Math.min(255,Math.round(data[2*p+i]*255)));rgba[i*4+3]=255}const full=document.createElement('canvas');full.width=W;full.height=H;full.getContext('2d').putImageData(new ImageData(rgba,W,H),0,0);const cropX=((MODEL_SIZE-w)/2)*SCALE,cropY=((MODEL_SIZE-h)/2)*SCALE,cropW=w*SCALE,cropH=h*SCALE;outputCanvas.getContext('2d').drawImage(full,cropX,cropY,cropW,cropH,0,0,outputCanvas.width,outputCanvas.height)}
+async function processVideo(){if(!file||!session||busy)return;busy=true;processBtn.disabled=true;progressWrap.classList.remove('hidden');setProgress(0);preview.classList.remove('hidden');downloadBtn.classList.add('hidden');resultText.textContent="";status("Reading video locally…");let inputMedia=null;try{const MB=window.MKMedia;inputMedia=new MB.Input({formats:MB.ALL_FORMATS,source:new MB.BlobSource(file)});const vt=await inputMedia.getPrimaryVideoTrack();if(!vt)throw Error("No video track found.");if(!(await vt.canDecode()))throw Error("This video codec cannot be decoded by this browser.");const duration=await vt.computeDuration();if(duration>MAX_SECONDS+.05)throw Error(`Video is ${duration.toFixed(1)}s. Maximum is ${MAX_SECONDS}s.`);const W=await vt.getDisplayWidth(),H=await vt.getDisplayHeight();const scale=Math.min(2,MAX_LONG_EDGE/Math.max(W,H));const outW=Math.max(2,Math.round(W*scale/2)*2),outH=Math.max(2,Math.round(H*scale/2)*2);const fpsInfo=await vt.computeFrameRateMetrics();const fps=Math.min(60,Math.max(1,fpsInfo.averageFrameRate||30));previewSub.textContent=`${W}×${H} → ${outW}×${outH} · ${fps.toFixed(1)} fps`;beforeVideo.src=URL.createObjectURL(file);status("Preparing local MP4 encoder…");const target=new MB.BufferTarget();const output=new MB.Output({format:new MB.Mp4OutputFormat({fastStart:'in-memory'}),target});const canvas=document.createElement('canvas');canvas.width=outW;canvas.height=outH;const source=new MB.CanvasSource(canvas,{codec:'avc',quality:new MB.Quality({bitrate:Math.max(2e6,Math.min(18e6,outW*outH*fps*0.08))})});output.addVideoTrack(source,{frameRate:fps});const at=await inputMedia.getPrimaryAudioTrack();let audioSource=null;if(at&&await at.canDecode()){audioSource=new MB.AudioSampleSource({codec:'aac',quality:new MB.Quality({bitrate:128e3})});output.addAudioTrack(audioSource)}await output.start();if(audioSource){status("Copying audio locally…");const asink=new MB.AudioSampleSink(at);for await(const sample of asink.samples(0,duration)){await audioSource.add(sample);sample.close()}}if(audioSource)audioSource.close();const vsink=new MB.VideoSampleSink(vt);const fastMode=selectedMode()==='fast';let count=0;for await(const sample of vsink.samples(0,duration)){const t=sample.timestamp,d=sample.duration;const src=document.createElement('canvas');src.width=W;src.height=H;sample.draw(src,0,0,W,H);if(fastMode){await aiFrame(src,canvas,W,H)}else{await detailFrame(src,canvas,W,H)}await source.add(t,d);sample.close();count++;setProgress(15+count/(Math.max(1,duration*fps))*80);status(`AI enhancing frame ${count}…`);await new Promise(r=>setTimeout(r,0))}source.close();await output.finalize();setProgress(100);const blob=new Blob([output.target.buffer],{type:'video/mp4'});const url=URL.createObjectURL(blob);afterVideo.src=url;downloadBtn.href=url;downloadBtn.classList.remove('hidden');resultText.textContent=`Done · ${formatBytes(blob.size)} · processed locally on your device.`;status("Upscaling complete. No video was uploaded.");preview.scrollIntoView({behavior:'smooth',block:'start'});inputMedia.dispose()}catch(e){try{inputMedia?.dispose()}catch{}err(e)}finally{busy=false;processBtn.disabled=!file}}
+async function detailFrame(src,canvas,W,H){canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);const tile=384,step=352;for(let y=0;y<H;y+=step){for(let x=0;x<W;x+=step){const tw=Math.min(tile,W-x),th=Math.min(tile,H-y);const tileCanvas=document.createElement('canvas');tileCanvas.width=tw;tileCanvas.height=th;tileCanvas.getContext('2d').drawImage(src,x,y,tw,th,0,0,tw,th);const tmp=document.createElement('canvas');tmp.width=tw*4;tmp.height=th*4;await aiFrame(tileCanvas,tmp,tw,th);canvas.getContext('2d').drawImage(tmp,0,0,tmp.width,tmp.height,x*4*(canvas.width/(W*4)),y*4*(canvas.height/(H*4)),tw*4*(canvas.width/(W*4)),th*4*(canvas.height/(H*4)))}}}
+input.addEventListener('change',async()=>{file=input.files?.[0]||null;processBtn.disabled=true;preview.classList.add('hidden');downloadBtn.classList.add('hidden');if(!file)return;try{const v=document.createElement('video');v.preload='metadata';v.muted=true;v.playsInline=true;v.src=URL.createObjectURL(file);await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=()=>rej(Error('Could not read video metadata. Try MP4/H.264.'))});if(v.duration>MAX_SECONDS+.05){fileMeta.textContent=`${file.name} · ${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)}s · too long`;fileMeta.classList.remove('hidden');status(`Maximum length is ${MAX_SECONDS} seconds.`);return}fileMeta.textContent=`${file.name} · ${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)}s · ${formatBytes(file.size)}`;fileMeta.classList.remove('hidden');if(!session)await init();processBtn.disabled=!session;status(session?'Ready to process locally.':'AI engine not ready.')}catch(e){err(e)}});
+processBtn.addEventListener('click',()=>processVideo().catch(err));
+window.addEventListener('mk-media-ready',()=>{mediaReady=true;if(file&&!session)init()});
+if(window.MKMedia)init();
