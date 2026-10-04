@@ -1,31 +1,18 @@
-# MK AI Video Upscaler — V0
+# MK AI Video Upscaler — V1 Beta
 
-Mobile-first browser prototype.
+Mobile-first browser-side AI video upscaler.
 
-## What this version proves
+- WebGPU + ONNX Runtime Web
+- Real-ESRGAN fixed 384 model
+- Mediabunny for browser-side media decode/encode and MP4 output
+- Audio is decoded/re-encoded locally when supported
+- Max input duration: 30 seconds
+- Fast mode: full-frame AI enhancement
+- Detail mode: 384px tiled AI processing (slower)
+- Output target: 2x, capped at 2160px long edge
 
-- Video can be selected locally.
-- Duration is checked (10 sec prototype limit).
-- WebGPU availability is checked.
-- Real-ESRGAN general x4 ONNX model is loaded in the browser.
-- One video frame is processed locally by the AI model.
-- No video upload/backend is used.
+## GitHub Pages
+Upload `index.html`, `style.css`, `app.js`, and `README.md` to the repo root and publish from `main` / root.
 
-## Run
-
-Because browsers restrict some local-file behavior, serve this folder over HTTPS or localhost.
-
-For GitHub Pages, upload these files to a repository and enable Pages.
-
-## Next milestone
-
-1. Decode the whole video frame-by-frame.
-2. AI upscale each frame with tiling/chunking to control mobile memory.
-3. Encode output in-browser.
-4. Preserve original audio.
-5. Add progress/cancel/resume handling.
-6. Raise duration limit from 10 sec to 30 sec after mobile stability testing.
-
-## Technical basis
-
-ONNX Runtime Web supports WebGPU in current Chromium-based Android browsers. WebCodecs provides browser-native video frame decode/encode primitives. The selected Real-ESRGAN ONNX model is a ~5 MB general-purpose 4x model.
+## Important
+The Fast mode uses a fixed-size model by fitting each source frame into the model's 384x384 input. Detail mode processes 384px tiles and is much slower on mobile. This is an early browser-only implementation; performance depends heavily on the phone GPU/browser and supported codecs.
