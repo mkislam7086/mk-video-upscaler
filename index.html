@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#090b10">
+  <title>MK AI Video Upscaler</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.js"></script>
+</head>
+<body>
+  <div class="bg-glow glow-a"></div><div class="bg-glow glow-b"></div>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">MK</span><div><b>MK AI</b><small>VIDEO UPSCALER</small></div></div>
+    <div class="privacy"><span></span> 100% browser-side</div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">PRIVATE • LOCAL • AI POWERED</div>
+      <h1>Make your video<br><em>sharper & cleaner.</em></h1>
+      <p>AI enhancement happens on your device. Your video is not uploaded to a server.</p>
+      <div class="chips"><span>⚡ WebGPU</span><span>✦ Real-ESRGAN</span><span>🔒 No upload</span></div>
+    </section>
+
+    <section class="card upload-card">
+      <input id="videoInput" type="file" accept="video/*" hidden>
+      <button id="dropZone" class="drop-zone" type="button">
+        <div class="upload-icon">↑</div><strong>Choose a video</strong><span>MP4, MOV, WebM • up to 30 seconds</span>
+      </button>
+      <div id="fileMeta" class="file-meta hidden"></div>
+    </section>
+
+    <section class="card controls">
+      <div class="section-title"><div><b>Enhancement</b><small>Choose the speed / quality balance</small></div><span id="engineBadge" class="badge">INITIALIZING…</span></div>
+      <div class="mode-grid">
+        <label class="mode"><input type="radio" name="mode" value="turbo"><b>Turbo</b><span>Fastest · AI every 3rd frame</span></label>
+        <label class="mode active"><input type="radio" name="mode" value="fast" checked><b>Fast</b><span>Balanced · AI every 2nd frame</span></label>
+        <label class="mode"><input type="radio" name="mode" value="detail"><b>Detail</b><span>Every frame · slowest, highest detail</span></label>
+      </div>
+      <div class="output-row"><span>Output</span><b>2× AI upscale</b><small>Full FPS output · local processing</small></div>
+      <button id="processBtn" class="primary" disabled>PROCESS VIDEO <span>→</span></button>
+      <div class="progress hidden" id="progressWrap"><div id="progressBar"></div></div>
+      <div id="status" class="status">Loading AI engine…</div>
+    </section>
+
+    <section id="preview" class="card preview hidden">
+      <div class="section-title"><div><b>Preview</b><small id="previewSub">Before / after</small></div><span id="percent">0%</span></div>
+      <div class="preview-grid"><div><label>ORIGINAL</label><video id="beforeVideo" controls playsinline></video></div><div><label>AI UPSCALED</label><video id="afterVideo" controls playsinline></video></div></div>
+      <a id="downloadBtn" class="download hidden" download="mk-ai-upscaled.mp4">DOWNLOAD UPSCALED VIDEO ↓</a>
+      <div id="resultText" class="result"></div>
+    </section>
+
+    <section class="how card">
+      <div class="section-title"><div><b>How it works</b><small>No cloud processing</small></div></div>
+      <div class="steps"><div><i>01</i><b>Select</b><span>Pick a short video from your phone.</span></div><div><i>02</i><b>Enhance</b><span>AI runs locally using your device GPU.</span></div><div><i>03</i><b>Export</b><span>Build a new MP4 and download it.</span></div></div>
+    </section>
+  </main>
+  <footer>MK AI VIDEO UPSCALER · Browser-side beta</footer>
+
+  <script type="module">
+    import {Input, ALL_FORMATS, BlobSource, VideoSampleSink, AudioSampleSink, Output, Mp4OutputFormat, BufferTarget, CanvasSource, AudioSampleSource, Quality} from 'https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/+esm';
+    window.MKMedia={Input,ALL_FORMATS,BlobSource,VideoSampleSink,AudioSampleSink,Output,Mp4OutputFormat,BufferTarget,CanvasSource,AudioSampleSource,Quality};
+    window.dispatchEvent(new Event('mk-media-ready'));
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>
