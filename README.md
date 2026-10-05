@@ -1,18 +1,14 @@
-# MK AI Video Upscaler — V1 Beta
+# MK AI Video Upscaler V2
 
-Mobile-first browser-side AI video upscaler.
+Mobile-first browser-side AI video upscaler. Video stays on the device.
 
-- WebGPU + ONNX Runtime Web
-- Real-ESRGAN fixed 384 model
-- Mediabunny for browser-side media decode/encode and MP4 output
-- Audio is decoded/re-encoded locally when supported
-- Max input duration: 30 seconds
-- Fast mode: full-frame AI enhancement
-- Detail mode: 384px tiled AI processing (slower)
-- Output target: 2x, capped at 2160px long edge
-
-## GitHub Pages
-Upload `index.html`, `style.css`, `app.js`, and `README.md` to the repo root and publish from `main` / root.
+## V2 speed improvements
+- Turbo mode: AI every 3rd frame, output remains at original FPS.
+- Fast mode: AI every 2nd frame.
+- Detail mode: AI every frame.
+- Reuses canvas/image buffers to reduce allocation overhead.
+- Enables ONNX Runtime WebGPU graph capture when supported by the static model.
+- Uses hardware/browser video encoding through WebCodecs/Mediabunny when available.
 
 ## Important
-The Fast mode uses a fixed-size model by fitting each source frame into the model's 384x384 input. Detail mode processes 384px tiles and is much slower on mobile. This is an early browser-only implementation; performance depends heavily on the phone GPU/browser and supported codecs.
+Turbo/Fast reduce AI inference count by reusing the latest AI frame for intermediate frames. This improves speed but can reduce temporal detail on fast motion. Detail is the quality mode.
