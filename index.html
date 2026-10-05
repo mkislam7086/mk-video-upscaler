@@ -32,12 +32,13 @@
     </section>
 
     <section class="card controls">
-      <div class="section-title"><div><b>Enhancement</b><small>Choose how aggressively to process</small></div><span id="engineBadge" class="badge">INITIALIZING…</span></div>
+      <div class="section-title"><div><b>Enhancement</b><small>Choose the speed / quality balance</small></div><span id="engineBadge" class="badge">INITIALIZING…</span></div>
       <div class="mode-grid">
-        <label class="mode active"><input type="radio" name="mode" value="fast" checked><b>Fast</b><span>Mobile friendly · AI enhancement</span></label>
-        <label class="mode"><input type="radio" name="mode" value="detail"><b>Detail</b><span>Tile-based · slower, more detail</span></label>
+        <label class="mode"><input type="radio" name="mode" value="turbo"><b>Turbo</b><span>Fastest · AI every 3rd frame</span></label>
+        <label class="mode active"><input type="radio" name="mode" value="fast" checked><b>Fast</b><span>Balanced · AI every 2nd frame</span></label>
+        <label class="mode"><input type="radio" name="mode" value="detail"><b>Detail</b><span>Every frame · slowest, highest detail</span></label>
       </div>
-      <div class="output-row"><span>Output</span><b>2× AI upscale</b><small>up to 2160px long edge</small></div>
+      <div class="output-row"><span>Output</span><b>2× AI upscale</b><small>Full FPS output · local processing</small></div>
       <button id="processBtn" class="primary" disabled>PROCESS VIDEO <span>→</span></button>
       <div class="progress hidden" id="progressWrap"><div id="progressBar"></div></div>
       <div id="status" class="status">Loading AI engine…</div>
