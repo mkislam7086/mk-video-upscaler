@@ -98,8 +98,8 @@ async function processVideo(){
       const t=sample.timestamp,d=sample.duration;sample.draw(srcCtx,0,0,W,H);
       const shouldAI=(count%interval===0)||lastAi<0;
       if(shouldAI){
-        status(mode==='detail'?`AI enhancing frame ${count+1}/${total}…`:`AI enhancing key frame ${aiCount+1}…`);
-        await aiFrame(src,canvas,W,H);aiCount++;lastAi=count;
+        status(mode==='detail'?`AI tile-enhancing frame ${count+1}/${total}…`:`AI enhancing key frame ${aiCount+1}…`);
+        if(mode==='detail'){await detailFrame(src,canvas,outW,outH); } else { await aiFrame(src,canvas,W,H); } aiCount++;lastAi=count;
       }
       await source.add(t,d);sample.close();count++;updateProgress(count,total);
       await new Promise(r=>setTimeout(r,0));
